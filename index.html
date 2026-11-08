@@ -45,13 +45,13 @@
   #me b { color: #9fe0a8; }
   .small { font-size: 12px; padding: 7px; }
   /* ---------- board ---------- */
-  #board { position: relative; flex: 1; background:
-      repeating-linear-gradient(45deg, #c9a876, #c9a876 12px, #c39f6e 12px, #c39f6e 24px); }
-  .sticky { position: absolute; width: 170px; min-height: 170px; padding: 10px; border-radius: 4px;
+  #board { position: relative; flex: 1; background-color: #ececec;
+      background-image: radial-gradient(#c6c6c6 1.5px, transparent 1.5px); background-size: 22px 22px; }
+  .sticky { position: absolute; min-height: 60px; padding: 10px; border-radius: 4px;
             box-shadow: 3px 4px 8px rgba(0,0,0,.3); font-size: 14px; line-height: 1.4; word-wrap: break-word;
             white-space: pre-wrap; cursor: grab; }
   .sticky.dark { color: #fff; }
-  .sticky textarea { width: 100%; height: 100%; border: 0; background: transparent; resize: none;
+  .sticky textarea { border: 0; background: transparent; resize: none; overflow: hidden;
                      font: inherit; color: inherit; outline: none; }
   #tools { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 5;
            background: rgba(255,255,255,.95); border-radius: 12px; padding: 8px 10px; box-shadow: 0 3px 10px rgba(0,0,0,.3); }
@@ -89,7 +89,7 @@
     <input id="pw" type="password" placeholder="password">
     <button class="btn btn-primary" id="emgo" onclick="if(window.trySignIn){trySignIn()}else{document.getElementById('gateerr').textContent='script blocked ✗ — JavaScript is not running'}">Sign in / Create account</button>
     <div id="gateerr"></div>
-    <p style="margin-top:14px;font-size:11px;color:#777">poster v5.5</p>
+    <p style="margin-top:14px;font-size:11px;color:#777">poster v5.6</p>
   </div>
 </div>
 
@@ -386,8 +386,20 @@ function renderNotes(){
     d.style.cssText = "left:" + n.x + "px;top:" + n.y + "px;background:" + n.color + ";z-index:" + (3 + i);
     const t = document.createElement("textarea");
     t.value = n.text || "";
-    t.oninput = () => { n.text = t.value; if (!cur.startsWith("shared:")) save(); pushLive(); };
+    const m = document.createElement("span");
+    m.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-size:14px;line-height:1.4";
+    const fit = () => {   // v4.3 behaviour: note stretches to fit its text, then grows taller
+      t.style.height = "auto";
+      t.style.height = Math.max(46, t.scrollHeight) + "px";
+      let w = 150;
+      t.value.split("\n").forEach(line => { m.textContent = line || " "; w = Math.max(w, m.offsetWidth + 16); });
+      t.style.width = Math.min(440, w) + "px";
+      d.style.width = (t.offsetWidth + 20) + "px";
+    };
+    t.oninput = () => { n.text = t.value; fit(); if (!cur.startsWith("shared:")) save(); pushLive(); };
     d.appendChild(t);
+    d.appendChild(m);
+    fit();
     d.onpointerdown = e => {
       if (e.target === t) return;
       const sx = e.clientX - n.x, sy = e.clientY - n.y;
