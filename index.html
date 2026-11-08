@@ -85,7 +85,7 @@
     <p class="sub">Pick a username to claim your<br>formula name and share boards.</p>
     <input id="em" type="text" placeholder="username" autocomplete="off">
     <input id="pw" type="password" placeholder="password">
-    <button class="btn btn-primary" id="emgo">Sign in / Create account</button>
+    <button class="btn btn-primary" id="emgo" onclick="if(window.trySignIn){trySignIn()}else{document.getElementById('gateerr').textContent='script blocked ✗ — JavaScript is not running'}">Sign in / Create account</button>
     <div id="gateerr"></div>
     <p style="margin-top:14px;font-size:11px;color:#777">poster v5.4</p>
   </div>
@@ -200,11 +200,12 @@ try {
   }
 } catch(e){ console.warn("Firebase init failed — continuing offline:", e); db = null; }
 window.onerror = function(msg){ try { showErr({ message: String(msg) }); } catch(_){} };
+try { document.getElementById("gateerr").textContent = "script loaded ✓"; } catch(e){}   // diagnostic marker
 
 const gate = document.getElementById("gate"), welcome = document.getElementById("welcome"),
       appEl = document.getElementById("app"), err = document.getElementById("gateerr");
 
-document.getElementById("emgo").addEventListener("click", async () => {
+async function trySignIn(){
   const name = document.getElementById("em").value.trim(), pw = document.getElementById("pw").value;
   const gateerr = document.getElementById("gateerr");
   if (!name || !pw){ gateerr.textContent = "Enter a username and a password."; return; }
@@ -216,7 +217,7 @@ document.getElementById("emgo").addEventListener("click", async () => {
     store.set("poster_me", name);
     await signedIn({ uid: "u_" + name.toLowerCase().replace(/[^a-z0-9]/g, "") });
   } catch(e){ showErr(e); }
-});
+}
 document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("emgo").click(); });
 document.getElementById("signout").onclick = () => { if (unsubShared) unsubShared(); store.del("poster_me"); signedIn(null); };
 
@@ -402,7 +403,7 @@ function pushLive(){
   }
 }
 document.getElementById("addnote").onclick = () => {
-  if (tool === "pen" || tool === "eraser") return;
+  setTool("note");   // pen/eraser no longer block adding notes — always allowed
   const live = cur.startsWith("shared:") ? activeShared() : myBoard();
   const c = COLORS.indexOf(selColor) === 6 ? "#1c1c1c" : selColor;
   live.notes.push({ x: 160 + Math.random() * 200, y: 90 + Math.random() * 120, color: c, text: "" });
@@ -426,6 +427,7 @@ function setTool(t){
 }
 document.getElementById("pen").onclick = () => setTool(tool === "pen" ? "note" : "pen");
 document.getElementById("eraser").onclick = () => setTool(tool === "eraser" ? "note" : "eraser");
+setTool("note");   // start in note mode so the pen is an explicit opt-in
 
 /* =================== ink canvas =================== */
 const ink = document.getElementById("ink"), ctx = ink.getContext("2d");
