@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>poster</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+  /* ---------- fullscreen gate ---------- */
+  #gate { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+          background: radial-gradient(circle at 30% 20%, #3b3b4f, #1c1c26); color: #fff; }
+  #gateerr { color: #ff9d9d; margin-top: 10px; font-size: 13px; min-height: 16px; }
+  #gate .card, #welcome .card, #sharemodal .card { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+          border-radius: 18px; padding: 40px 48px; text-align: center; width: 380px; color: #fff; }
+  #gate h1 { font-size: 34px; margin-bottom: 6px; }
+  #gate p.sub { color: #bbb; margin-bottom: 26px; font-size: 14px; }
+  .btn { display: block; width: 100%; padding: 12px; border: 0; border-radius: 10px; font-size: 15px;
+         cursor: pointer; margin-top: 10px; }
+  .btn-google { background: #fff; color: #333; }
+  .btn-primary { background: #4f8cff; color: #fff; }
+  #gate input { width: 100%; padding: 11px; margin-top: 8px; border-radius: 10px; border: 1px solid #555;
+                background: #262633; color: #fff; font-size: 14px; }
+  .toggle { color: #8ab4ff; background: none; border: 0; cursor: pointer; font-size: 13px; margin-top: 14px; }
+  #gateerr { color: #ff8a8a; font-size: 13px; min-height: 18px; margin-top: 8px; }
+  /* ---------- welcome ---------- */
+  #welcome { position: fixed; inset: 0; z-index: 99; display: none; align-items: center; justify-content: center;
+             background: radial-gradient(circle at 70% 80%, #35507a, #16202f); }
+  #welcome .formula { font-size: 52px; font-weight: 700; letter-spacing: 2px; margin: 18px 0 6px; color: #9fe0a8; }
+  #welcome .sub2 { color: #cfd8e3; font-size: 14px; margin-bottom: 24px; }
+  /* ---------- sidebar ---------- */
+  #side { width: 230px; background: #2b2b36; color: #eee; padding: 14px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  #side h2 { font-size: 17px; margin-bottom: 8px; }
+  #side h3 { font-size: 11px; text-transform: uppercase; color: #888; margin: 10px 0 4px; letter-spacing: 1px; }
+  .boardbtn { background: #3a3a49; border: 0; color: #eee; text-align: left; padding: 9px 10px; border-radius: 8px;
+              cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .boardbtn.active { background: #4f8cff; }
+  .boardbtn .share { opacity: .6; font-size: 12px; }
+  .boardbtn .share:hover { opacity: 1; }
+  #me { margin-top: auto; font-size: 12px; color: #aaa; padding-top: 10px; }
+  #me b { color: #9fe0a8; }
+  .small { font-size: 12px; padding: 7px; }
+  /* ---------- board ---------- */
+  #board { position: relative; flex: 1; background:
+      repeating-linear-gradient(45deg, #c9a876, #c9a876 12px, #c39f6e 12px, #c39f6e 24px); }
+  .sticky { position: absolute; width: 170px; min-height: 170px; padding: 10px; border-radius: 4px;
+            box-shadow: 3px 4px 8px rgba(0,0,0,.3); font-size: 14px; line-height: 1.4; word-wrap: break-word;
+            white-space: pre-wrap; cursor: grab; }
+  .sticky.dark { color: #fff; }
+  .sticky textarea { width: 100%; height: 100%; border: 0; background: transparent; resize: none;
+                     font: inherit; color: inherit; outline: none; }
+  #tools { position: absolute; top: 10px; left: 10px; display: flex; gap: 8px; z-index: 5; }
+  .tool { background: #fff; border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 13px;
+          box-shadow: 0 2px 5px rgba(0,0,0,.25); }
+  .tool.on { outline: 3px solid #4f8cff; }
+  .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; cursor: pointer; }
+  .swatch.sel { outline: 3px solid #222; }
+  canvas.ink { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  canvas.ink.drawing { pointer-events: auto; }
+  #hint { position: absolute; bottom: 10px; right: 12px; font-size: 12px; color: rgba(0,0,0,.55); }
+  /* ---------- share modal ---------- */
+  #sharemodal { position: fixed; inset: 0; z-index: 110; display: none; align-items: center; justify-content: center;
+                background: rgba(0,0,0,.55); }
+  #sharemodal input { width: 100%; padding: 11px; border-radius: 10px; border: 1px solid #555;
+                      background: #262633; color: #fff; font-size: 14px; margin-top: 8px; }
+  #picklist { max-height: 200px; overflow-y: auto; margin-top: 10px; text-align: left; }
+  .pick { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+          font-size: 14px; color: #ddd; }
+  .pick:hover { background: rgba(255,255,255,.1); }
+  .pick.on { background: #4f8cff; color: #fff; }
+  .pick .who { color: #999; font-size: 11px; margin-left: auto; }
+  #shareinfo { font-size: 12px; color: #9fe0a8; margin-top: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+
+<!-- ===== full-screen sign-in gate ===== -->
+<div id="gate">
+  <div class="card">
+    <h1>poster</h1>
+    <p class="sub">Pick a username to claim your<br>formula name and share boards.</p>
+    <input id="em" type="text" placeholder="username" autocomplete="off">
+    <input id="pw" type="password" placeholder="password">
+    <button class="btn btn-primary" id="emgo">Sign in / Create account</button>
+    <div id="gateerr"></div>
+    <p style="margin-top:14px;font-size:11px;color:#777">poster v5.4</p>
+  </div>
+</div>
+
+<!-- ===== welcome / formula confirmation ===== -->
+<div id="welcome">
+  <div class="card">
+    <p style="font-size:15px">Welcome! Your name is</p>
+    <div class="formula" id="fml">…</div>
+    <p class="sub2">A unique chemical formula, claimed just for you.</p>
+    <button class="btn btn-primary" id="enter">Enter the board →</button>
+  </div>
+</div>
+
+<!-- ===== share modal ===== -->
+<div id="sharemodal">
+  <div class="card">
+    <p style="font-size:16px;font-weight:600" id="sharetitle">Share board</p>
+    <input id="sharesearch" placeholder="Search usernames…">
+    <div id="picklist"></div>
+    <div id="shareinfo"></div>
+    <button class="btn btn-primary" id="sharedone">Done</button>
+  </div>
+</div>
+
+<!-- ===== main app ===== -->
+<div id="app" style="display:none">
+  <div id="side">
+    <h2>poster</h2>
+    <h3>my boards</h3>
+    <div id="boards"></div>
+    <button class="boardbtn small" id="newboard">＋ new private board</button>
+    <h3>shared with me</h3>
+    <div id="sharedlist"></div>
+    <div id="me"></div>
+    <button class="boardbtn small" id="signout">sign out</button>
+  </div>
+  <div id="board">
+    <div id="tools">
+      <button class="tool" id="addnote">＋ note</button>
+      <button class="tool" id="pen">✏️ pen</button>
+      <button class="tool" id="eraser">🧽 eraser</button>
+      <div id="swatches" style="display:flex;gap:5px;align-items:center;background:#fff;border-radius:8px;padding:5px 8px"></div>
+    </div>
+    <canvas class="ink" id="ink"></canvas>
+    <div id="hint">share a board with 🔗 · pick people by name · private boards stay on this device</div>
+  </div>
+</div>
+
+<script>
+/* ====== safe storage — FIRST thing in the script; sandboxes like CodeHS block localStorage ====== */
+const mem = {};
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return (k in mem) ? mem[k] : null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } },
+  del(k){ try { localStorage.removeItem(k); } catch(e){ delete mem[k]; } }
+};
+
+/* ====== paste your firebaseConfig here ====== */
+const FIREBASE_CONFIG = { apiKey: "", authDomain: "", projectId: "", appId: "" };
+
+/* =================== state =================== */
+const LS = "poster_v5";
+let boards = JSON.parse(store.get(LS) || "null") || [
+  { id: "b1", name: "my board", sharedWith: [], notes: [], strokes: [] }
+];
+let cur = boards[0].id, selColor = "#fff9a8", tool = "note", drawing = null, unsub = null, unsubShared = null;
+let sharedBoards = [];   // live list of boards shared with me: {docId, name, notes, strokes}
+const COLORS = ["#fff9a8","#ffc2d1","#bde3ff","#c8f7c5","#ffd9a8","#e3c8ff","#1c1c1c"];
+const save = () => store.set(LS, JSON.stringify(boards));
+const myBoard = () => boards.find(b => b.id === cur);
+const activeShared = () => sharedBoards.find(s => "shared:" + s.docId === cur);
+
+/* =================== identity =================== */
+const ELEMENTS = ["H","He","Li","Be","B","C","N","O","F","Ne","Na","Mg","Al","Si","P","S","Cl","Ar","K","Ca",
+  "Sc","Ti","V","Cr","Mn","Fe","Co","Ni","Cu","Zn","Ga","Ge","As","Se","Br","Kr","Rb","Sr","Y","Zr",
+  "Nb","Mo","Tc","Ru","Rh","Pd","Ag","Cd","In","Sn","Sb","Te","I","Xe","Cs","Ba","La","Ce","W","Pt",
+  "Au","Hg","Pb","Bi","Rn","Ra","Th","U","Pu"];
+function hash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function formulaFrom(uid, salt){
+  const h1 = hash(uid+"#1#"+salt), h2 = hash(uid+"#2#"+salt), h3 = hash(uid+"#3#"+salt);
+  const e1 = ELEMENTS[h1 % ELEMENTS.length];
+  const e2 = ELEMENTS[h2 % ELEMENTS.length];
+  const n  = (h3 % 9) + 1;
+  return e1 + (n>1 ? "<sub>"+n+"</sub>" : "") + e2;
+}
+const fmlPlain = f => f.replace(/<\/?sub>/g,"");
+let myFormula = null, myPlain = null;
+
+async function claimFormula(uid){
+  try {
+  const mine = await db.collection("users").doc(uid).get();
+  if (mine.exists && mine.data().formula) return mine.data().formula;
+  for (let salt = 0; salt < 200; salt++){
+    const f = formulaFrom(uid, salt), plain = fmlPlain(f);
+    try {
+      await db.collection("registry").doc(plain).create({ uid });   // name directory, fails if taken
+      await db.collection("users").doc(uid).set({ formula: f, plain });
+      return f;
+    } catch(e){ /* claimed — next salt */ }
+  }
+  } catch(e){ console.warn("claimFormula failed:", e); showErr(e); }
+  return formulaFrom(uid, Date.now());   // offline / failed → local fallback name
+}
+
+/* =================== auth + onboarding =================== */
+let app, db, auth;
+try {
+  if (FIREBASE_CONFIG.apiKey && typeof firebase !== "undefined" && firebase.initializeApp){
+    app = firebase.initializeApp(FIREBASE_CONFIG); auth = firebase.auth(); db = firebase.firestore();
+  }
+} catch(e){ console.warn("Firebase init failed — continuing offline:", e); db = null; }
+window.onerror = function(msg){ try { showErr({ message: String(msg) }); } catch(_){} };
+
+const gate = document.getElementById("gate"), welcome = document.getElementById("welcome"),
+      appEl = document.getElementById("app"), err = document.getElementById("gateerr");
+
+document.getElementById("emgo").addEventListener("click", async () => {
+  const name = document.getElementById("em").value.trim(), pw = document.getElementById("pw").value;
+  const gateerr = document.getElementById("gateerr");
+  if (!name || !pw){ gateerr.textContent = "Enter a username and a password."; return; }
+  try {
+    const accts = JSON.parse(store.get("poster_accounts") || "{}");
+    if (accts[name] && accts[name] !== pw){ gateerr.textContent = "Wrong password for that username."; return; }
+    accts[name] = pw;
+    store.set("poster_accounts", JSON.stringify(accts));
+    store.set("poster_me", name);
+    await signedIn({ uid: "u_" + name.toLowerCase().replace(/[^a-z0-9]/g, "") });
+  } catch(e){ showErr(e); }
+});
+document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("emgo").click(); });
+document.getElementById("signout").onclick = () => { if (unsubShared) unsubShared(); store.del("poster_me"); signedIn(null); };
+
+async function signedIn(u){
+  try {
+    if (u){
+      gate.style.display = "none";
+      welcome.style.display = "flex";
+      myFormula = await Promise.race([
+        Promise.resolve(claimFormula(u.uid)),
+        new Promise(res => setTimeout(() => res(formulaFrom(u.uid, Date.now())), 4000))
+      ]);
+      myPlain = fmlPlain(myFormula);
+      document.getElementById("fml").innerHTML = myFormula;
+      document.getElementById("me").innerHTML = "signed in as <b>" + myPlain + "</b>";
+      try { if (db) listenShared(); } catch(e){ showErr(e); }
+    } else {
+      welcome.style.display = "none"; appEl.style.display = "none";
+      gate.style.display = "flex";
+    }
+  } catch(e){
+    showErr(e);                                   // never leave the user on a black screen
+    gate.style.display = "none";
+    appEl.style.display = "flex";
+    document.getElementById("me").innerHTML = "signed in, cloud error — <b>offline mode</b>";
+  }
+}
+(function(){   // restore saved session
+  try { const saved = store.get("poster_me");
+        if (saved) signedIn({ uid: "u_" + saved.toLowerCase().replace(/[^a-z0-9]/g, "") }); } catch(e){ showErr(e); }
+})();
+function showErr(e){
+  const m = (e && (e.code || e.message)) || String(e);
+  console.error(m);
+  const g = document.getElementById("gateerr");
+  if (g) g.textContent = m;
+}
+document.getElementById("enter").onclick = () => { welcome.style.display = "none"; appEl.style.display = "flex"; render(); };
+
+/* listen for boards shared with me */
+function listenShared(){
+  if (unsubShared) unsubShared();
+  unsubShared = db.collection("boards").where("sharedWith", "array-contains", myPlain)
+    .onSnapshot(snap => {
+      sharedBoards = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+      renderShared();
+      if (cur.startsWith("shared:")){
+        const s = activeShared();
+        if (!s){ cur = boards[0].id; render(); }  // we were removed
+        else { renderNotes(); drawInk(); }
+      }
+    });
+}
+
+/* =================== boards UI =================== */
+function render(){
+  const el = document.getElementById("boards"); el.innerHTML = "";
+  boards.forEach(b => {
+    const btn = document.createElement("button");
+    btn.className = "boardbtn" + (b.id === cur ? " active" : "");
+    btn.innerHTML = "<span>" + b.name + (b.sharedWith.length ? " 👥" : "") + "</span>" +
+      "<span class='share' data-share='" + b.id + "'>🔗</span>";
+    btn.onclick = e => {
+      if (e.target.dataset.share) return openShare(e.target.dataset.share);
+      switchBoard(b.id);
+    };
+    el.appendChild(btn);
+  });
+}
+function renderShared(){
+  const el = document.getElementById("sharedlist"); el.innerHTML = "";
+  if (!sharedBoards.length){ el.innerHTML = "<div style='font-size:12px;color:#777;padding:4px 6px'>none yet</div>"; return; }
+  sharedBoards.forEach(s => {
+    const btn = document.createElement("button");
+    btn.className = "boardbtn" + (cur === "shared:" + s.docId ? " active" : "");
+    btn.innerHTML = "<span>" + s.name + "</span><span class='share' style='font-size:10px'>by " + (s.ownerPlain || "?") + "</span>";
+    btn.onclick = () => switchBoard("shared:" + s.docId);
+    el.appendChild(btn);
+  });
+}
+function switchBoard(id){
+  if (unsub){ unsub(); unsub = null; }
+  cur = id; render(); renderShared(); save(); drawInk(); renderNotes();
+  const live = id.startsWith("shared:") ? activeShared() : myBoard();
+  if (live && live.docId !== undefined && db){   // it's a shared board → live sync
+    unsub = db.collection("boards").doc(live.docId)
+      .onSnapshot(snap => {
+        if (!snap.exists) return;
+        const d = snap.data();
+        s = sharedBoards.find(x => x.docId === live.docId);
+        if (s){ s.notes = d.notes || []; s.strokes = d.strokes || []; }
+        drawInk(); renderNotes();
+      });
+  }
+}
+document.getElementById("newboard").onclick = () => {
+  const b = { id: "b" + Date.now(), name: "board " + (boards.length + 1), sharedWith: [], notes: [], strokes: [] };
+  boards.push(b); cur = b.id; save(); render(); switchBoard(cur);
+};
+
+/* =================== share modal =================== */
+let pickDocId = null, picked = new Set(), registrySub = null;
+const modal = document.getElementById("sharemodal"), list = document.getElementById("picklist");
+
+async function openShare(boardId){
+  if (!db) return alert("Add your Firebase config first to share boards.");
+  const b = boards.find(x => x.id === boardId);
+  pickDocId = b.sharedDocId || null;
+  picked = new Set(b.sharedWith || []);
+  document.getElementById("sharetitle").textContent = "Share “" + b.name + "”";
+  document.getElementById("shareinfo").textContent = picked.size ? "Currently sharing with: " + [...picked].join(", ") : "Not shared yet";
+  modal.style.display = "flex";
+  document.getElementById("sharesearch").value = "";
+  // pull the full username directory
+  const snap = await db.collection("registry").get();
+  const names = snap.docs.map(d => d.id).filter(n => n !== myPlain).sort();
+  renderPicks(names, document.getElementById("sharesearch").value);
+  document.getElementById("sharesearch").oninput = e => renderPicks(names, e.target.value);
+}
+function renderPicks(names, q){
+  list.innerHTML = "";
+  names.filter(n => n.toLowerCase().includes(q.toLowerCase())).forEach(n => {
+    const row = document.createElement("div");
+    row.className = "pick" + (picked.has(n) ? " on" : "");
+    row.innerHTML = "<span>" + (picked.has(n) ? "✓ " : "") + n + "</span>";
+    row.onclick = () => {
+      picked.has(n) ? picked.delete(n) : picked.add(n);
+      document.getElementById("shareinfo").textContent = picked.size ? "Sharing with: " + [...picked].join(", ") : "Not shared yet";
+      renderPicks(names.filter(x => x.toLowerCase().includes(document.getElementById("sharesearch").value.toLowerCase())),
+                  document.getElementById("sharesearch").value);
+    };
+    list.appendChild(row);
+  });
+  if (!list.children.length) list.innerHTML = "<div style='color:#999;font-size:13px;padding:8px'>no matching usernames</div>";
+}
+document.getElementById("sharedone").onclick = async () => {
+  const b = boards.find(x => x.id === pickDocId || x.sharedDocId === pickDocId);
+  const target = boards.find(x => x.id === pickDocId) || b;
+  if (!target) { modal.style.display = "none"; return; }
+  if (!picked.size && target.sharedDocId){
+    // fully unshared → delete cloud copy
+    await db.collection("boards").doc(target.sharedDocId).delete();
+    target.sharedWith = []; delete target.sharedDocId;
+  } else if (picked.size){
+    if (!target.sharedDocId) target.sharedDocId = "bd" + Date.now().toString(36);
+    await db.collection("boards").doc(target.sharedDocId).set({
+      name: target.name, owner: auth.currentUser.uid, ownerPlain: myPlain,
+      notes: target.notes, strokes: target.strokes, sharedWith: [...picked]
+    });
+    target.sharedWith = [...picked];
+  }
+  save(); modal.style.display = "none"; render(); if (cur === target.id) switchBoard(cur);
+};
+
+/* =================== notes =================== */
+function renderNotes(){
+  document.querySelectorAll(".sticky").forEach(n => n.remove());
+  const live = cur.startsWith("shared:") ? activeShared() : myBoard();
+  (live.notes || []).forEach((n, i) => {
+    const d = document.createElement("div");
+    d.className = "sticky" + (n.color === "#1c1c1c" ? " dark" : "");
+    d.style.cssText = "left:" + n.x + "px;top:" + n.y + "px;background:" + n.color + ";z-index:" + (3 + i);
+    const t = document.createElement("textarea");
+    t.value = n.text || "";
+    t.oninput = () => { n.text = t.value; if (!cur.startsWith("shared:")) save(); pushLive(); };
+    d.appendChild(t);
+    d.onpointerdown = e => {
+      if (e.target === t) return;
+      const sx = e.clientX - n.x, sy = e.clientY - n.y;
+      const mv = ev => { n.x = ev.clientX - sx; n.y = ev.clientY - sy; d.style.left = n.x + "px"; d.style.top = n.y + "px"; };
+      const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); if (!cur.startsWith("shared:")) save(); pushLive(); };
+      addEventListener("pointermove", mv); addEventListener("pointerup", up);
+    };
+    d.oncontextmenu = e => { e.preventDefault(); live.notes.splice(i, 1); if (!cur.startsWith("shared:")) save(); renderNotes(); pushLive(); };
+    document.getElementById("board").appendChild(d);
+  });
+}
+function pushLive(){
+  const live = cur.startsWith("shared:") ? activeShared() : myBoard();
+  if (live && live.sharedDocId && db){
+    db.collection("boards").doc(live.sharedDocId).set(
+      { name: live.name, notes: live.notes, strokes: live.strokes, sharedWith: live.sharedWith || [] }, { merge: true });
+  }
+}
+document.getElementById("addnote").onclick = () => {
+  if (tool === "pen" || tool === "eraser") return;
+  const live = cur.startsWith("shared:") ? activeShared() : myBoard();
+  const c = COLORS.indexOf(selColor) === 6 ? "#1c1c1c" : selColor;
+  live.notes.push({ x: 160 + Math.random() * 200, y: 90 + Math.random() * 120, color: c, text: "" });
+  if (!cur.startsWith("shared:")) save(); renderNotes(); pushLive();
+};
+
+/* =================== swatches / tools =================== */
+const sw = document.getElementById("swatches");
+COLORS.forEach(c => {
+  const s = document.createElement("div");
+  s.className = "swatch" + (c === selColor ? " sel" : "");
+  s.style.background = c;
+  s.onclick = () => { selColor = c; document.querySelectorAll(".swatch").forEach(x => x.classList.remove("sel")); s.classList.add("sel"); };
+  sw.appendChild(s);
+});
+function setTool(t){
+  tool = t;
+  document.getElementById("pen").classList.toggle("on", t === "pen");
+  document.getElementById("eraser").classList.toggle("on", t === "eraser");
+  document.getElementById("ink").classList.toggle("drawing", t === "pen" || t === "eraser");
+}
+document.getElementById("pen").onclick = () => setTool(tool === "pen" ? "note" : "pen");
+document.getElementById("eraser").onclick = () => setTool(tool === "eraser" ? "note" : "eraser");
+
+/* =================== ink canvas =================== */
+const ink = document.getElementById("ink"), ctx = ink.getContext("2d");
+function sizeInk(){ ink.width = ink.parentElement.clientWidth; ink.height = ink.parentElement.clientHeight; drawInk(); }
+addEventListener("resize", sizeInk);
+function drawInk(){
+  ctx.clearRect(0, 0, ink.width, ink.height);
+  const live = cur.startsWith("shared:") ? activeShared() : myBoard();
+  (live && live.strokes || []).forEach(s => {
+    ctx.strokeStyle = s.color; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath();
+    s.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.stroke();
+  });
+}
+ink.onpointerdown = e => {
+  if (tool === "eraser"){
+    const live = cur.startsWith("shared:") ? activeShared() : myBoard();
+    live.strokes = live.strokes.filter(s => !s.pts.some(p => Math.hypot(p.x - e.offsetX, p.y - e.offsetY) < 10));
+    drawInk(); if (!cur.startsWith("shared:")) save(); pushLive(); return;
+  }
+  if (tool !== "pen") return;
+  const selDark = COLORS.indexOf(selColor) === 6;
+  drawing = { color: selDark ? "#111" : selColor, pts: [{ x: e.offsetX, y: e.offsetY }] };
+  ink.setPointerCapture(e.pointerId);
+};
+ink.onpointermove = e => {
+  if (!drawing) return;
+  drawing.pts.push({ x: e.offsetX, y: e.offsetY });
+  ctx.strokeStyle = drawing.color; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath();
+  const p = drawing.pts; ctx.moveTo(p[p.length - 2].x, p[p.length - 2].y); ctx.lineTo(p[p.length - 1].x, p[p.length - 1].y); ctx.stroke();
+};
+ink.onpointerup = () => {
+  if (!drawing) return;
+  const live = cur.startsWith("shared:") ? activeShared() : myBoard();
+  live.strokes.push(drawing); drawing = null; if (!cur.startsWith("shared:")) save(); pushLive();
+};
+
+sizeInk(); render(); renderShared(); renderNotes();
+</script>
+</body>
+</html>
