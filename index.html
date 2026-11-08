@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>poster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<link href="https://fonts.googleapis.com/css2?family=Shantell+Sans:wght@500&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -45,12 +48,18 @@
   #me b { color: #9fe0a8; }
   .small { font-size: 12px; padding: 7px; }
   /* ---------- board ---------- */
-  #board { position: relative; flex: 1; background-color: #ececec;
-      background-image: radial-gradient(#c6c6c6 1.5px, transparent 1.5px); background-size: 22px 22px; }
-  .sticky { position: absolute; min-height: 60px; padding: 10px; border-radius: 4px;
-            box-shadow: 3px 4px 8px rgba(0,0,0,.3); font-size: 14px; line-height: 1.4; word-wrap: break-word;
+  #board { position: relative; flex: 1; background-color: #E9EDEA;
+      background-image: radial-gradient(#D3DAD5 1.5px, transparent 1.5px); background-size: 22px 22px; }
+  .sticky { position: absolute; min-height: 60px; padding: 12px 14px 24px; border-radius: 6px;
+            box-shadow: 0 6px 14px rgba(30,35,32,.28); font-family: 'Shantell Sans', inherit;
+            font-size: 14px; line-height: 1.4; word-wrap: break-word;
             white-space: pre-wrap; cursor: grab; }
   .sticky.dark { color: #fff; }
+  .sticky .handle { position: absolute; top: 4px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity .12s; }
+  .sticky:hover .handle { opacity: 1; }
+  .handle button { width: 22px; height: 22px; border: none; border-radius: 4px; cursor: pointer;
+            background: rgba(42,45,49,.12); font-size: 12px; line-height: 1; }
+  .handle button:hover { background: rgba(42,45,49,.25); }
   .sticky textarea { border: 0; background: transparent; resize: none; overflow: hidden;
                      font: inherit; color: inherit; outline: none; }
   #tools { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 5;
@@ -61,7 +70,7 @@
   .tool.on { outline: 3px solid #4f8cff; }
   .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; cursor: pointer; }
   .swatch.sel { outline: 3px solid #222; }
-  canvas.ink { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  canvas.ink { position: absolute; inset: 0; z-index: 90; pointer-events: none; }
   canvas.ink.drawing { pointer-events: auto; }
   #hint { position: absolute; bottom: 10px; right: 12px; font-size: 12px; color: rgba(0,0,0,.55); }
   /* ---------- share modal ---------- */
@@ -89,7 +98,7 @@
     <input id="pw" type="password" placeholder="password">
     <button class="btn btn-primary" id="emgo" onclick="if(window.trySignIn){trySignIn()}else{document.getElementById('gateerr').textContent='script blocked ✗ — JavaScript is not running'}">Sign in / Create account</button>
     <div id="gateerr"></div>
-    <p style="margin-top:14px;font-size:11px;color:#777">poster v5.6</p>
+    <p style="margin-top:14px;font-size:11px;color:#777">poster v5.7</p>
   </div>
 </div>
 
@@ -156,9 +165,9 @@ const LS = "poster_v5";
 let boards = JSON.parse(store.get(LS) || "null") || [
   { id: "b1", name: "my board", sharedWith: [], notes: [], strokes: [] }
 ];
-let cur = boards[0].id, selColor = "#fff9a8", tool = "note", drawing = null, unsub = null, unsubShared = null;
+let cur = boards[0].id, selColor = "#FBE38E", tool = "note", drawing = null, unsub = null, unsubShared = null;
 let sharedBoards = [];   // live list of boards shared with me: {docId, name, notes, strokes}
-const COLORS = ["#fff9a8","#ffc2d1","#bde3ff","#c8f7c5","#ffd9a8","#e3c8ff","#1c1c1c"];
+const COLORS = ["#FBE38E","#F7C4CF","#BFE0F2","#CDE8C5","#E5D4F0","#F4D9B8","#1c1c1c"];ff","#1c1c1c"];
 const save = () => store.set(LS, JSON.stringify(boards));
 const myBoard = () => boards.find(b => b.id === cur);
 const activeShared = () => sharedBoards.find(s => "shared:" + s.docId === cur);
@@ -259,7 +268,7 @@ function showErr(e){
   const g = document.getElementById("gateerr");
   if (g) g.textContent = m;
 }
-document.getElementById("enter").onclick = () => { welcome.style.display = "none"; appEl.style.display = "flex"; render(); };
+document.getElementById("enter").onclick = () => { welcome.style.display = "none"; appEl.style.display = "flex"; render(); sizeInk(); };
 
 /* listen for boards shared with me */
 function listenShared(){
@@ -271,7 +280,7 @@ function listenShared(){
       if (cur.startsWith("shared:")){
         const s = activeShared();
         if (!s){ cur = boards[0].id; render(); }  // we were removed
-        else { renderNotes(); drawInk(); }
+        else { renderNotes(); sizeInk(); }
       }
     });
 }
@@ -304,7 +313,7 @@ function renderShared(){
 }
 function switchBoard(id){
   if (unsub){ unsub(); unsub = null; }
-  cur = id; render(); renderShared(); save(); drawInk(); renderNotes();
+  cur = id; render(); renderShared(); save(); sizeInk(); renderNotes();
   const live = id.startsWith("shared:") ? activeShared() : myBoard();
   if (live && live.docId !== undefined && db){   // it's a shared board → live sync
     unsub = db.collection("boards").doc(live.docId)
@@ -388,17 +397,32 @@ function renderNotes(){
     t.value = n.text || "";
     const m = document.createElement("span");
     m.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-size:14px;line-height:1.4";
-    const fit = () => {   // v4.3 behaviour: note stretches to fit its text, then grows taller
+    const fit = () => {   // v4.3 behaviour: notes stretch to fit text and only ever grow, never shrink
       t.style.height = "auto";
-      t.style.height = Math.max(46, t.scrollHeight) + "px";
+      const h = Math.max(46, t.scrollHeight);
       let w = 150;
       t.value.split("\n").forEach(line => { m.textContent = line || " "; w = Math.max(w, m.offsetWidth + 16); });
-      t.style.width = Math.min(440, w) + "px";
+      w = Math.min(440, w);
+      n.h = Math.max(n.h || 0, h);
+      n.w = Math.max(n.w || 0, w);
+      t.style.height = n.h + "px";
+      t.style.width = n.w + "px";
       d.style.width = (t.offsetWidth + 20) + "px";
     };
     t.oninput = () => { n.text = t.value; fit(); if (!cur.startsWith("shared:")) save(); pushLive(); };
+    const h = document.createElement("div"); h.className = "handle";
+    const cyc = document.createElement("button"); cyc.type = "button"; cyc.textContent = "\u270e"; cyc.title = "change color";
+    cyc.onclick = e => { e.stopPropagation();
+      const ci = COLORS.indexOf(n.color);
+      n.color = COLORS[(ci + 1) % (COLORS.length - 1)];
+      d.style.background = n.color; d.classList.toggle("dark", n.color === "#1c1c1c");
+      if (!cur.startsWith("shared:")) save(); pushLive(); };
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "\u00d7"; del.title = "remove note";
+    del.onclick = e => { e.stopPropagation(); live.notes.splice(i, 1); if (!cur.startsWith("shared:")) save(); renderNotes(); pushLive(); };
+    h.appendChild(cyc); h.appendChild(del);
     d.appendChild(t);
     d.appendChild(m);
+    d.appendChild(h);
     fit();
     d.onpointerdown = e => {
       if (e.target === t) return;
@@ -452,6 +476,8 @@ setTool("note");   // start in note mode so the pen is an explicit opt-in
 const ink = document.getElementById("ink"), ctx = ink.getContext("2d");
 function sizeInk(){ ink.width = ink.parentElement.clientWidth; ink.height = ink.parentElement.clientHeight; drawInk(); }
 addEventListener("resize", sizeInk);
+addEventListener("load", sizeInk);
+sizeInk();   // size the ink canvas to the board immediately — pen is dead without this
 function drawInk(){
   ctx.clearRect(0, 0, ink.width, ink.height);
   const live = cur.startsWith("shared:") ? activeShared() : myBoard();
@@ -464,17 +490,19 @@ function drawInk(){
 ink.onpointerdown = e => {
   if (tool === "eraser"){
     const live = cur.startsWith("shared:") ? activeShared() : myBoard();
-    live.strokes = live.strokes.filter(s => !s.pts.some(p => Math.hypot(p.x - e.offsetX, p.y - e.offsetY) < 10));
+    live.strokes = live.strokes.filter(s => !s.pts.some(p => Math.hypot(p.x - (e.clientX - ink.getBoundingClientRect().left), p.y - (e.clientY - ink.getBoundingClientRect().top)) < 10));
     drawInk(); if (!cur.startsWith("shared:")) save(); pushLive(); return;
   }
   if (tool !== "pen") return;
+  const r = ink.getBoundingClientRect();
   const selDark = COLORS.indexOf(selColor) === 6;
-  drawing = { color: selDark ? "#111" : selColor, pts: [{ x: e.offsetX, y: e.offsetY }] };
+  drawing = { color: selDark ? "#111" : selColor, pts: [{ x: e.clientX - r.left, y: e.clientY - r.top }] };
   ink.setPointerCapture(e.pointerId);
 };
 ink.onpointermove = e => {
   if (!drawing) return;
-  drawing.pts.push({ x: e.offsetX, y: e.offsetY });
+  const r = ink.getBoundingClientRect();
+  drawing.pts.push({ x: e.clientX - r.left, y: e.clientY - r.top });
   ctx.strokeStyle = drawing.color; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath();
   const p = drawing.pts; ctx.moveTo(p[p.length - 2].x, p[p.length - 2].y); ctx.lineTo(p[p.length - 1].x, p[p.length - 1].y); ctx.stroke();
 };
