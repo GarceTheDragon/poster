@@ -155,7 +155,7 @@ function showErr(msg){
   var t=document.createElement("div");
   t.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#3A2226;color:#F3C6C6;border:1px solid #7A4444;padding:8px 14px;border-radius:9px;font-size:12.5px;z-index:99;max-width:80%";
   t.textContent=msg;document.body.appendChild(t);
-  setTimeout(function(){t.remove();},9000);
+  setTimeout(function(){t.remove();},15000);
 }
 window.addEventListener("error",function(e){showErr("⚠ "+e.message);});
 window.addEventListener("unhandledrejection",function(e){
@@ -169,10 +169,15 @@ var penBtn=document.getElementById("penBtn"), noteBtn=document.getElementById("n
 function enter(u){
   me=u;
   authEl.style.display="none"; appEl.style.display="flex";
-  document.getElementById("meName").textContent=u.name;
-  document.getElementById("meFormula").textContent=u.formula;
+  if(!u.name){
+    showErr("signed in, but your profile has no name — sign out and in again to rebuild it");
+  }else{
+    document.getElementById("meName").textContent=u.name;
+    document.getElementById("meFormula").textContent=u.formula||"";
+    showErr("✓ signed in as "+u.name);
+  }
   setTimeout(sizeInk,0); /* app just became visible — canvas was sized while hidden */
-  listenBoards();
+  try{listenBoards();}catch(e){showErr("boards startup error: "+e.message);}
 }
 
 function doAuth(){
@@ -187,6 +192,13 @@ function doAuth(){
     if(doc.exists){
       return auth.signInWithEmailAndPassword(email,p).then(function(){
         return db.collection("users").doc(n.toLowerCase()).get();
+      }).then(function(doc2){
+        var d=doc2.data()||{};
+        if(!d.name){ /* profile doc exists but is empty/broken — rebuild it */
+          d={name:n, formula:formulaFor(n), uid:auth.currentUser.uid, createdAt:Date.now()};
+          return db.collection("users").doc(n.toLowerCase()).set(d).then(function(){return d;});
+        }
+        return d;
       });
     }
     return auth.createUserWithEmailAndPassword(email,p)
@@ -213,6 +225,7 @@ function listenBoards(){
   if(boardsUnsub)boardsUnsub();
   if(boardsUnsub2)boardsUnsub2();
   boardDocs={};
+  if(!me||!me.name){showErr("no username on profile — boards can't load; sign out and in again");return;}
   var mine=me.name.toLowerCase();
   var qOwn=db.collection("boards").where("owner","==",mine);
   var qShared=db.collection("boards").where("shared","array-contains",mine);
