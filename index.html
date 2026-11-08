@@ -501,7 +501,15 @@ shareBtn.addEventListener("click",function(){
 
 /* ---------- boot ---------- */
 sizeInk();
+
+/* version button — tells us which copy of the file is actually running */
+var verBtn=document.createElement("button");
+verBtn.textContent="v6.1";
+verBtn.title="the version of poster this page is running";
+verBtn.style.cssText="margin:10px 0 0;background:none;border:none;color:var(--muted);font-size:11px;text-align:left;padding:4px 0;cursor:default";
+document.getElementById("side").appendChild(verBtn);
 })();
 </script>
 </body>
 </html>
+```
