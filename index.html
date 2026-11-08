@@ -109,6 +109,7 @@ var FIREBASE_CONFIG = {
       <div class="toolrow"><button id="penBtn">✏️</button><div class="swatches" id="penSwatches"></div></div>
       <div class="toolrow"><button id="noteBtn">+</button><div class="swatches" id="noteSwatches"></div></div>
     </div>
+    <button class="out" id="shareBtn">Share this board</button>
     <button class="out" id="btnOut">Sign out</button>
   </aside>
   <div class="boardwrap">
@@ -140,7 +141,7 @@ function formulaFor(name){
 }
 
 /* ---------- state ---------- */
-var me=null, curBoard=null, boardsUnsub=null, notesUnsub=null;
+var me=null, curBoard=null, boardsUnsub=null, boardsUnsub2=null, notesUnsub=null, boardDocs={};
 var COLORS=["var(--n1)","var(--n2)","var(--n3)","var(--n4)","var(--n5)","var(--n6)"];
 var PENS=[{c:"#1A1A1A"},{c:"#D93636"},{c:"#2263C2"},{c:"#2E8B3A"},{c:"#F07C1F"}];
 var noteColor=0, penColor=PENS[0].c;
@@ -148,6 +149,18 @@ var liveNotes=[]; // {id, data, el, txt, sig}
 
 var authEl=document.getElementById("auth"), appEl=document.getElementById("app");
 var authMsg=document.getElementById("authMsg");
+
+/* ---------- visible error reporting (so failures aren't silent) ---------- */
+function showErr(msg){
+  var t=document.createElement("div");
+  t.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#3A2226;color:#F3C6C6;border:1px solid #7A4444;padding:8px 14px;border-radius:9px;font-size:12.5px;z-index:99;max-width:80%";
+  t.textContent=msg;document.body.appendChild(t);
+  setTimeout(function(){t.remove();},9000);
+}
+window.addEventListener("error",function(e){showErr("⚠ "+e.message);});
+window.addEventListener("unhandledrejection",function(e){
+  var r=e.reason||{};showErr("⚠ "+(r.code||r.message||"something failed silently"));
+});
 var boardListEl=document.getElementById("boardList");
 var board=document.getElementById("board");
 var penBtn=document.getElementById("penBtn"), noteBtn=document.getElementById("noteBtn");
@@ -158,6 +171,7 @@ function enter(u){
   authEl.style.display="none"; appEl.style.display="flex";
   document.getElementById("meName").textContent=u.name;
   document.getElementById("meFormula").textContent=u.formula;
+  setTimeout(sizeInk,0); /* app just became visible — canvas was sized while hidden */
   listenBoards();
 }
 
@@ -190,32 +204,45 @@ function doAuth(){
 document.getElementById("btnAuth").addEventListener("click",doAuth);
 document.getElementById("uPass").addEventListener("keydown",function(e){if(e.key==="Enter")doAuth();});
 document.getElementById("btnOut").addEventListener("click",function(){
-  if(boardsUnsub)boardsUnsub(); if(notesUnsub)notesUnsub();
+  if(boardsUnsub)boardsUnsub(); if(boardsUnsub2)boardsUnsub2(); if(notesUnsub)notesUnsub();
   auth.signOut().then(function(){location.reload();});
 });
 
 /* ---------- boards (firestore) ---------- */
 function listenBoards(){
   if(boardsUnsub)boardsUnsub();
-  boardsUnsub=db.collection("boards").onSnapshot(function(snap){
-    renderBoards(snap);
+  if(boardsUnsub2)boardsUnsub2();
+  boardDocs={};
+  var mine=me.name.toLowerCase();
+  var qOwn=db.collection("boards").where("owner","==",mine);
+  var qShared=db.collection("boards").where("shared","array-contains",mine);
+  var apply=function(snap){
+    snap.docChanges().forEach(function(ch){
+      if(ch.type==="removed")delete boardDocs[ch.doc.id];
+      else boardDocs[ch.doc.id]=ch.doc;
+    });
+    renderBoards(boardDocs);
     if(!curBoard){
-      if(snap.docs.length){loadBoard(snap.docs[0].id);}
+      var ids=Object.keys(boardDocs);
+      if(ids.length){loadBoard(ids[0]);}
       else{
-        db.collection("boards").add({name:"main", updatedAt:Date.now()})
+        db.collection("boards").add({name:"main", owner:mine, updatedAt:Date.now()})
           .then(function(ref){loadBoard(ref.id);});
       }
     }
-  });
+  };
+  boardsUnsub=qOwn.onSnapshot(apply,function(e){showErr("boards sync error: "+e.code);});
+  boardsUnsub2=qShared.onSnapshot(apply,function(e){showErr("shared boards sync error: "+e.code);});
 }
 
-function renderBoards(snap){
+function renderBoards(docs){
   boardListEl.innerHTML="";
-  snap.forEach(function(doc){
+  Object.keys(docs).forEach(function(id){
+    var doc=docs[id];
     var b=document.createElement("button");
     b.textContent=doc.data().name||"untitled";
-    if(doc.id===curBoard)b.classList.add("sel");
-    b.addEventListener("click",function(){loadBoard(doc.id);});
+    if(id===curBoard)b.classList.add("sel");
+    b.addEventListener("click",function(){loadBoard(id);});
     boardListEl.appendChild(b);
   });
   var nb=document.createElement("button");
@@ -230,7 +257,7 @@ function renderBoards(snap){
     function make(){
       var name=inp.value.trim();
       if(!name){nb.textContent="+ new board";return;}
-      db.collection("boards").add({name:name, updatedAt:Date.now()})
+      db.collection("boards").add({name:name, owner:me.name.toLowerCase(), updatedAt:Date.now()})
         .then(function(ref){loadBoard(ref.id);});
     }
     inp.addEventListener("keydown",function(e){
@@ -261,7 +288,7 @@ function loadBoard(id){
         else{addNote(ch.doc.id,ch.doc.data());}
       }
     });
-  });
+  },function(e){showErr("notes sync error: "+e.code);});
 }
 
 function updateNote(entry,data){
@@ -295,15 +322,15 @@ function addNote(id,n){
   var notesCol=function(){return db.collection("boards").doc(curBoard).collection("notes");};
 
   cyc.addEventListener("click",function(){
-    notesCol().doc(id).update({c:((n.c||0)+1)%COLORS.length});
+    notesCol().doc(id).update({c:((n.c||0)+1)%COLORS.length}).catch(function(e){showErr("couldn't change color: "+e.code);});
   });
   del.addEventListener("click",function(){
-    notesCol().doc(id).delete();
+    notesCol().doc(id).delete().catch(function(e){showErr("couldn't delete note: "+e.code);});
   });
   txt.addEventListener("input",function(){
     var patch={t:txt.textContent};
     if(!n.sig&&!n.t&&me)patch.sig=me.formula;
-    notesCol().doc(id).update(patch);
+    notesCol().doc(id).update(patch).catch(function(e){showErr("couldn't save note: "+e.code);});
   });
 
   /* drag */
@@ -336,10 +363,10 @@ function addNote(id,n){
 }
 
 noteBtn.addEventListener("click",function(){
-  if(!me||!curBoard)return;
+  if(!me||!curBoard){showErr("no board selected — click a board first");return;}
   db.collection("boards").doc(curBoard).collection("notes").add({
     t:"",x:80+Math.random()*160,y:80+Math.random()*160,c:noteColor,who:me.formula
-  });
+  }).catch(function(e){showErr("couldn't add note: "+e.code);});
 });
 
 /* ---------- swatches ---------- */
@@ -373,6 +400,7 @@ function sizeInk(){
 window.addEventListener("resize",sizeInk);
 
 function setTool(){
+  if(!canvas.width)sizeInk(); /* resize canvas if it was sized while the app was hidden */
   penBtn.classList.toggle("on",pen&&!erase);
   canvas.style.pointerEvents=(pen||erase)?"auto":"none";
   canvas.style.cursor=erase?"cell":"crosshair";
@@ -422,6 +450,54 @@ canvas.addEventListener("pointerup",function(){drawing=false;});
 /* hide the 6th note swatch so the toolbar stays compact */
 var noteRow=document.getElementById("noteSwatches");
 if(noteRow.children.length>5)noteRow.children[noteRow.children.length-1].style.display="none";
+
+/* ---------- share board with existing usernames ---------- */
+var shareBtn=document.getElementById("shareBtn");
+shareBtn.addEventListener("click",function(){
+  if(!me||!curBoard)return;
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:center;justify-content:center";
+  var card=document.createElement("div");
+  card.style.cssText="background:#22262B;border:1px solid var(--side-line);border-radius:14px;padding:20px;width:300px;color:var(--text)";
+  var title=document.createElement("div");
+  title.textContent="share this board";
+  title.style.cssText="font-family:'Shantell Sans',cursive;font-size:18px;color:var(--accent);margin-bottom:10px";
+  card.appendChild(title);
+  var list=document.createElement("div");
+  list.textContent="loading usernames…";
+  list.style.fontSize="13px";
+  card.appendChild(list);
+  var close=document.createElement("button");
+  close.textContent="done";
+  close.style.cssText="margin-top:14px;width:100%;background:var(--accent);border:none;color:#10222B;font-weight:600;padding:8px;border-radius:9px";
+  card.appendChild(close);
+  ov.appendChild(card);document.body.appendChild(ov);
+  close.addEventListener("click",function(){ov.remove();});
+  ov.addEventListener("click",function(e){if(e.target===ov)ov.remove();});
+  db.collection("users").get().then(function(snap){
+    list.innerHTML="";
+    if(!snap.size){list.textContent="no users registered yet";return;}
+    snap.forEach(function(doc){
+      var u=doc.data();
+      if(!u.name)return;
+      var row=document.createElement("div");
+      row.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:6px 0";
+      var nm=document.createElement("span");
+      nm.textContent=u.name+(u.formula?" ("+u.formula+")":"");
+      var add=document.createElement("button");
+      add.textContent="add";
+      add.style.cssText="background:#262A2F;border:1px solid var(--side-line);color:var(--text);border-radius:7px;padding:4px 10px;font-size:12px";
+      add.addEventListener("click",function(){
+        db.collection("boards").doc(curBoard).set(
+          {shared:firebase.firestore.FieldValue.arrayUnion(u.name.toLowerCase())},
+          {merge:true}
+        );
+        add.textContent="added ✓";add.disabled=true;add.style.opacity=.5;
+      });
+      row.appendChild(nm);row.appendChild(add);list.appendChild(row);
+    });
+  }).catch(function(e){list.textContent="couldn't load users ("+e.code+")";});
+});
 
 /* ---------- boot ---------- */
 sizeInk();
