@@ -1,26 +1,3 @@
-# poster.html — your complete app, one file (v5.4)
-
-**What's new in v5.4 — username + password, no Firebase account needed:** signing in is now purely local — a username and password field, accounts stored in your browser. Nothing to configure for sign-in to work. Sharing boards still uses Firebase if you've set it up. The Google option is gone entirely.
-
-**What's new in v5.3.1 — no more black screen:** every Firebase call is now wrapped, and if anything fails (Firestore not created yet, blocked network, popup blocked) the app shows the error and drops you into the board anyway instead of a blank page.
-
-**What's new in v5.3 — sharing without codes:**
-- Click 🔗 on any private board and a **share picker** opens: type a few letters and pick from the list of existing usernames (formulas). No codes to copy.
-- Boards you share appear instantly in the other person's sidebar under **"shared with me"** — they see and edit it live.
-- The owner can open the picker again to **add or remove** people (removed users lose the board immediately).
-- Everything else stays as v5.2: unique claimed formula identities, full-screen sign-in → welcome screen, private boards never leave your browser.
-
-## one-time setup (~5 minutes, free)
-1. console.firebase.google.com → **Add project** → name it → create.
-2. **Build → Authentication → Get started** → enable **Email/Password** (sign-in itself works even without this — accounts are local; this only matters for shared boards).
-3. **Build → Firestore Database → Create database** → **Start in test mode**.
-4. **Project settings (⚙️) → Your apps → </> web icon** → register → copy the `firebaseConfig` values.
-5. Paste them into `FIREBASE_CONFIG` at the top of the `<script>` section.
-6. Save, reload — sign-in, identity, and people-based sharing go live.
-
-**How to use it:** copy the code block, save as `poster.html` (not `.txt`), double-click.
-
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -490,13 +467,3 @@ sizeInk(); render(); renderShared(); renderNotes();
 </script>
 </body>
 </html>
-```
-
-**How sharing works now:**
-
-1. Click 🔗 next to any board → a **picker modal** opens with every registered username (pulled live from the `registry` collection in Firestore). Type a few letters to filter, tap names to toggle ✓, hit Done.
-2. The board appears instantly in those people's **"shared with me"** sidebar section (shown with its owner's name), syncing live both ways.
-3. Re-open 🔗 on a shared board (marked 👥) to add or remove people — deselecting everyone deletes the cloud copy. Removed users see the board vanish from their sidebar immediately.
-4. Your own username comes from the same registry, so the picker only ever offers names that actually exist.
-
-Private boards still never leave your browser — they're only uploaded the moment you pick someone to share with. Test it and I'll tune whatever feels off.
