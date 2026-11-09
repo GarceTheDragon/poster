@@ -189,23 +189,26 @@ function doAuth(){
   if(p.length<6){authMsg.className="err";authMsg.textContent="password needs at least 6 characters (firebase rule)";return;}
   var email=n.toLowerCase()+"@poster.local";
   authMsg.textContent="…";
-  db.collection("users").doc(n.toLowerCase()).get().then(function(doc){
-    if(doc.exists){
-      return auth.signInWithEmailAndPassword(email,p).then(function(){
-        return db.collection("users").doc(n.toLowerCase()).get();
-      }).then(function(doc2){
-        var d=doc2.data()||{};
-        if(!d.name){ /* profile doc exists but is empty/broken — rebuild it */
-          d={name:n, formula:formulaFor(n), uid:auth.currentUser.uid, createdAt:Date.now()};
-          return db.collection("users").doc(n.toLowerCase()).set(d).then(function(){return d;});
-        }
-        return d;
-      });
-    }
+  /* sign in FIRST — no Firestore reads while unauthenticated (rules deny them) */
+  auth.signInWithEmailAndPassword(email,p).then(function(cred){
+    return db.collection("users").doc(n.toLowerCase()).get().then(function(doc2){
+      var d=doc2.data()||{};
+      if(!d.name){ /* profile doc missing or empty — rebuild it */
+        d={name:n, formula:formulaFor(n), uid:cred.user.uid, createdAt:Date.now()};
+        return db.collection("users").doc(n.toLowerCase()).set(d).then(function(){return d;});
+      }
+      return d;
+    });
+  }).catch(function(e){
+    if(e.code!=="auth/user-not-found"&&e.code!=="auth/invalid-credential")throw e;
+    /* no such account yet — create it (auth happens before any Firestore write) */
     return auth.createUserWithEmailAndPassword(email,p)
       .then(function(cred){
         var profile={name:n, formula:formulaFor(n), uid:cred.user.uid, createdAt:Date.now()};
         return db.collection("users").doc(n.toLowerCase()).set(profile).then(function(){return profile;});
+      }).catch(function(e2){
+        if(e2.code==="auth/email-already-in-use")throw {code:"auth/wrong-password"};
+        throw e2;
       });
   }).then(function(profile){
     enter(profile);
