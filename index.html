@@ -141,11 +141,12 @@ function formulaFor(name){
 }
 
 /* ---------- state ---------- */
-var me=null, curBoard=null, boardsUnsub=null, boardsUnsub2=null, notesUnsub=null, boardDocs={};
+var me=null, curBoard=null, boardsUnsub=null, boardsUnsub2=null, notesUnsub=null, strokesUnsub=null, mainTried=false, boardDocs={};
 var COLORS=["var(--n1)","var(--n2)","var(--n3)","var(--n4)","var(--n5)","var(--n6)"];
 var PENS=[{c:"#1A1A1A"},{c:"#D93636"},{c:"#2263C2"},{c:"#2E8B3A"},{c:"#F07C1F"}];
 var noteColor=0, penColor=PENS[0].c;
 var liveNotes=[]; // {id, data, el, txt, sig}
+var strokes=[], curPts=[]; // saved ink strokes + the stroke being drawn
 
 var authEl=document.getElementById("auth"), appEl=document.getElementById("app");
 var authMsg=document.getElementById("authMsg");
@@ -216,7 +217,7 @@ function doAuth(){
 document.getElementById("btnAuth").addEventListener("click",doAuth);
 document.getElementById("uPass").addEventListener("keydown",function(e){if(e.key==="Enter")doAuth();});
 document.getElementById("btnOut").addEventListener("click",function(){
-  if(boardsUnsub)boardsUnsub(); if(boardsUnsub2)boardsUnsub2(); if(notesUnsub)notesUnsub();
+  if(boardsUnsub)boardsUnsub(); if(boardsUnsub2)boardsUnsub2(); if(notesUnsub)notesUnsub(); if(strokesUnsub)strokesUnsub();
   auth.signOut().then(function(){location.reload();});
 });
 
@@ -235,7 +236,8 @@ function listenBoards(){
       else boardDocs[ch.doc.id]=ch.doc;
     });
     renderBoards(boardDocs);
-    if(!curBoard){
+    if(!curBoard && !mainTried){
+      mainTried=true;
       var ids=Object.keys(boardDocs);
       if(ids.length){loadBoard(ids[0]);}
       else{
@@ -246,6 +248,7 @@ function listenBoards(){
   };
   boardsUnsub=qOwn.onSnapshot(apply,function(e){showErr("boards sync error: "+e.code);});
   boardsUnsub2=qShared.onSnapshot(apply,function(e){showErr("shared boards sync error: "+e.code);});
+  setTimeout(function(){mainTried=false;},5000); /* re-arm the auto-create guard after the startup race window */
 }
 
 function renderBoards(docs){
@@ -288,8 +291,13 @@ function renderBoards(docs){
 function loadBoard(id){
   curBoard=id;
   if(notesUnsub)notesUnsub();
+  if(strokesUnsub)strokesUnsub();
   board.querySelectorAll(".note").forEach(function(n){n.remove();});
-  liveNotes=[]; clearInk();
+  liveNotes=[]; strokes=[]; clearInk();
+  strokesUnsub=db.collection("boards").doc(id).collection("strokes").orderBy("seq").onSnapshot(function(snap){
+    strokes=[]; snap.forEach(function(d){strokes.push(d.data());});
+    redrawInk();
+  },function(e){showErr("ink sync error: "+e.code);});
   notesUnsub=db.collection("boards").doc(id).collection("notes").onSnapshot(function(snap){
     snap.docChanges().forEach(function(ch){
       if(ch.type==="removed"){
@@ -410,7 +418,34 @@ function sizeInk(){
   canvas.style.width=r.width+"px";canvas.style.height=r.height+"px";
   ictx=canvas.getContext("2d");ictx.lineCap="round";ictx.lineJoin="round";
 }
-window.addEventListener("resize",sizeInk);
+window.addEventListener("resize",function(){sizeInk();redrawInk();});
+
+/* ---------- saved ink (strokes persist per board) ---------- */
+function strokesCol(){return db.collection("boards").doc(curBoard).collection("strokes");}
+function drawStroke(s){
+  if(!ictx)return;
+  ictx.save();
+  ictx.lineCap="round";ictx.lineJoin="round";
+  if(s.erase){
+    ictx.globalCompositeOperation="destination-out";ictx.lineWidth=24;ictx.fillStyle="#000";
+  }else{
+    ictx.strokeStyle=s.c||"#1A1A1A";ictx.lineWidth=2.5;ictx.fillStyle=s.c||"#1A1A1A";
+  }
+  var p=s.pts||[];
+  if(p.length>=4){
+    ictx.beginPath();ictx.moveTo(p[0],p[1]);
+    for(var i=2;i<p.length;i+=2)ictx.lineTo(p[i],p[i+1]);
+    ictx.stroke();
+  }else if(p.length>=2){
+    ictx.beginPath();ictx.arc(p[0],p[1],s.erase?12:1.4,0,Math.PI*2);ictx.fill();
+  }
+  ictx.restore();
+}
+function redrawInk(){
+  if(!ictx)return;
+  ictx.clearRect(0,0,canvas.width,canvas.height);
+  strokes.forEach(drawStroke);
+}
 
 function setTool(){
   if(!canvas.width)sizeInk(); /* resize canvas if it was sized while the app was hidden */
@@ -435,6 +470,7 @@ canvas.addEventListener("pointerdown",function(e){
   drawing=true;canvas.setPointerCapture(e.pointerId);
   var r=board.getBoundingClientRect();
   last={x:e.clientX-r.left,y:e.clientY-r.top};
+  curPts=[Math.round(last.x),Math.round(last.y)];
   if(erase){
     ictx.save();
     ictx.globalCompositeOperation="destination-out";
@@ -456,9 +492,15 @@ canvas.addEventListener("pointermove",function(e){
     ictx.strokeStyle=penColor;ictx.lineWidth=2.5;
     ictx.beginPath();ictx.moveTo(last.x,last.y);ictx.lineTo(p.x,p.y);ictx.stroke();
   }
-  last=p;
+  last=p;curPts.push(Math.round(p.x),Math.round(p.y));
 });
-canvas.addEventListener("pointerup",function(){drawing=false;});
+canvas.addEventListener("pointerup",function(){
+  if(drawing&&curBoard&&curPts.length>=2){
+    strokesCol().add({seq:Date.now(),erase:!!erase,c:erase?null:penColor,pts:curPts})
+      .catch(function(e){showErr("couldn't save ink: "+e.code);});
+  }
+  drawing=false;curPts=[];
+});
 
 /* hide the 6th note swatch so the toolbar stays compact */
 var noteRow=document.getElementById("noteSwatches");
