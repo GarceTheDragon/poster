@@ -239,15 +239,7 @@ function listenBoards(){
       else boardDocs[ch.doc.id]=ch.doc;
     });
     renderBoards(boardDocs);
-    if(!curBoard && !mainTried){
-      mainTried=true;
-      var ids=Object.keys(boardDocs);
-      if(ids.length){loadBoard(ids[0]);}
-      else{
-        db.collection("boards").add({name:"main", owner:mine, updatedAt:Date.now()})
-          .then(function(ref){loadBoard(ref.id);});
-      }
-    }
+    /* no auto "main", no auto-load: users pick a board or make one with "+ new board" */
   };
   boardsUnsub=qOwn.onSnapshot(apply,function(e){showErr("boards sync error: "+e.code);});
   boardsUnsub2=qShared.onSnapshot(apply,function(e){showErr("shared boards sync error: "+e.code);});
@@ -541,16 +533,27 @@ shareBtn.addEventListener("click",function(){
       var row=document.createElement("div");
       row.style.cssText="display:flex;justify-content:space-between;align-items:center;padding:6px 0";
       var nm=document.createElement("span");
-      nm.textContent=u.name+(u.formula?" ("+u.formula+")":"");
+      var uname=u.name.toLowerCase();
+      if(me && uname===me.name.toLowerCase())return; /* skip yourself */
+      var bdoc=boardDocs[curBoard], curSh=(bdoc&&bdoc.data)?(bdoc.data().shared||[]):[];
+      var already=curSh.indexOf(uname)!==-1;
+      nm.textContent=u.formula||"??"; /* formulas only — usernames stay private */
       var add=document.createElement("button");
-      add.textContent="add";
+      add.textContent=already?"shared ✓":"add";
       add.style.cssText="background:#262A2F;border:1px solid var(--side-line);color:var(--text);border-radius:7px;padding:4px 10px;font-size:12px";
+      if(already){add.disabled=true;add.style.opacity=.5;}
       add.addEventListener("click",function(){
-        db.collection("boards").doc(curBoard).set(
-          {shared:firebase.firestore.FieldValue.arrayUnion(u.name.toLowerCase())},
-          {merge:true}
-        );
-        add.textContent="added ✓";add.disabled=true;add.style.opacity=.5;
+        add.textContent="…";add.disabled=true;add.style.opacity=.5;
+        db.collection("boards").doc(curBoard).get().then(function(d){
+          var sh=(d.data()||{}).shared||[];
+          if(sh.indexOf(uname)!==-1){add.textContent="shared ✓";return;}
+          return db.collection("boards").doc(curBoard).set(
+            {shared:firebase.firestore.FieldValue.arrayUnion(uname)},{merge:true}
+          ).then(function(){add.textContent="added ✓";});
+        }).catch(function(e){
+          add.textContent="failed";add.disabled=false;add.style.opacity=1;
+          showErr("couldn't share: "+e.code);
+        });
       });
       row.appendChild(nm);row.appendChild(add);list.appendChild(row);
     });
@@ -562,7 +565,7 @@ sizeInk();
 
 /* version button — tells us which copy of the file is actually running */
 var verBtn=document.createElement("button");
-verBtn.textContent="v6.2";
+verBtn.textContent="v6.3";
 verBtn.title="the version of poster this page is running";
 verBtn.style.cssText="margin:10px 0 0;background:none;border:none;color:var(--muted);font-size:11px;text-align:left;padding:4px 0;cursor:default";
 var sideEl=document.getElementById("side")||boardListEl.parentElement||document.getElementById("app");
