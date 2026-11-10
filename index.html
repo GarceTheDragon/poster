@@ -309,7 +309,8 @@ function loadBoard(id){
 
 function updateNote(entry,data){
   entry.data=data;
-  entry.el.style.left=(data.x||80)+"px"; entry.el.style.top=(data.y||80)+"px";
+  entry.el.style.left=Math.min(Math.max(0,data.x||80),Math.max(0,board.clientWidth-170))+"px";
+  entry.el.style.top=Math.min(Math.max(0,data.y||80),Math.max(0,board.clientHeight-170))+"px";
   entry.el.style.background=COLORS[data.c||0];
   if(document.activeElement!==entry.txt){entry.txt.textContent=data.t||"";}
   entry.sig.textContent=data.sig||data.who||"";
@@ -318,7 +319,8 @@ function updateNote(entry,data){
 function addNote(id,n){
   var el=document.createElement("div");
   el.className="note";
-  el.style.left=(n.x||80)+"px"; el.style.top=(n.y||80)+"px";
+  el.style.left=Math.min(Math.max(0,n.x||80),Math.max(0,board.clientWidth-170))+"px";
+  el.style.top=Math.min(Math.max(0,n.y||80),Math.max(0,board.clientHeight-170))+"px";
   if(n.w)el.style.width=n.w+"px"; if(n.h)el.style.height=n.h+"px";
   el.style.setProperty("--r",((Math.random()*4)-2).toFixed(1)+"deg");
   el.style.background=COLORS[n.c||0];
@@ -351,14 +353,22 @@ function addNote(id,n){
 
   /* drag */
   el.addEventListener("pointerdown",function(e){
-    if(txt.contains(e.target)||rs.contains(e.target))return;
+    if(txt.contains(e.target)||rs.contains(e.target)||hd.contains(e.target))return;
     var sx=e.clientX-el.offsetLeft, sy=e.clientY-el.offsetTop;
     el.setPointerCapture(e.pointerId); el.classList.add("dragging");
-    function mv(ev){el.style.left=(ev.clientX-sx)+"px";el.style.top=(ev.clientY-sy)+"px";}
+    function clampPos(x,y){
+      var mx=Math.max(0,board.clientWidth-el.offsetWidth-8), my=Math.max(0,board.clientHeight-el.offsetHeight-8);
+      return [Math.min(Math.max(0,x),mx), Math.min(Math.max(0,y),my)];
+    }
+    function mv(ev){
+      var p=clampPos(ev.clientX-sx, ev.clientY-sy);
+      el.style.left=p[0]+"px"; el.style.top=p[1]+"px";
+    }
     function up(){
       el.releasePointerCapture(e.pointerId); el.classList.remove("dragging");
       el.removeEventListener("pointermove",mv);el.removeEventListener("pointerup",up);
-      notesCol().doc(id).update({x:parseInt(el.style.left,10),y:parseInt(el.style.top,10)});
+      var p=clampPos(parseInt(el.style.left,10), parseInt(el.style.top,10));
+      notesCol().doc(id).update({x:p[0], y:p[1]});
     }
     el.addEventListener("pointermove",mv);el.addEventListener("pointerup",up);
   });
@@ -565,7 +575,7 @@ sizeInk();
 
 /* version button — tells us which copy of the file is actually running */
 var verBtn=document.createElement("button");
-verBtn.textContent="v6.3";
+verBtn.textContent="v6.4";
 verBtn.title="the version of poster this page is running";
 verBtn.style.cssText="margin:10px 0 0;background:none;border:none;color:var(--muted);font-size:11px;text-align:left;padding:4px 0;cursor:default";
 var sideEl=document.getElementById("side")||boardListEl.parentElement||document.getElementById("app");
